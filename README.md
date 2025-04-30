@@ -32,7 +32,7 @@ O Mlflow utiliza os bancos de dados PostgreSql e Minio. O MongoDB é utilizado p
 
 ## Treinar modelo e salvar no Mlflow:
 
-- GET localhost:5000/train_and_promote
+- GET http://localhost:5000/train_and_promote
 - Parametros de URL (request param):
 
 ```
