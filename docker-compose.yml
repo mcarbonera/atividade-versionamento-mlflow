@@ -1,0 +1,134 @@
+services:
+
+  api:
+    container_name: api
+    build: api
+    restart: on-failure
+    #network_mode: "host"
+    networks:
+      - frontend
+      - backend
+    ports:
+      - "5000:5000"
+    environment:
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      - mongo
+      - tracking_server
+
+  mongo:
+    image: mongo
+    container_name: mongo
+    environment:
+        - MONGO_INITDB_ROOT_USERNAME=root
+        - MONGO_INITDB_ROOT_PASSWORD=password
+    restart: on-failure
+    networks:
+      - frontend
+      - backend
+    ports:
+      - "27017:27017"
+    volumes:
+      - ./data/database/db:/data/db
+      - ./data/database/dev.archive:/Databases/dev.archive
+      - ./data/database/production:/Databases/production
+
+  mongo-express:
+    image: mongo-express
+    container_name: mongo_express
+    networks:
+      - frontend
+      - backend
+    environment:
+      - ME_CONFIG_MONGODB_ADMINUSERNAME=root
+      - ME_CONFIG_MONGODB_ADMINPASSWORD=password
+      - ME_CONFIG_MONGODB_URL=mongodb://root:password@mongo:27017/?authSource=admin
+      - ME_CONFIG_BASICAUTH_USERNAME=mexpress
+      - ME_CONFIG_BASICAUTH_PASSWORD=mexpress
+    links:
+      - mongo
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    depends_on:
+      - mongo
+
+  db:
+    restart: always
+    image: postgres
+    container_name: mlflow_db
+    expose:
+      - "5432"
+    networks:
+      - backend
+    environment:
+      - POSTGRES_USER=mlflow
+      - POSTGRES_PASSWORD=mlflow
+      - POSTGRES_DATABASE=mlflow
+    volumes:
+      - ./data/db_data:/var/lib/postgresql/data/
+    healthcheck:
+      test: ["CMD", "pg_isready", "-p", "5432", "-U", "mlflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 3
+
+  s3:
+    restart: on-failure
+    image: minio/minio
+    container_name: mlflow_minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    networks:
+    - frontend
+    - backend
+    volumes:
+      - ./data/minio_data:/data
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: minio123
+      MINIO_PORT: 9000
+      MINIO_ADDRESS: ':9000'
+      MINIO_CONSOLE_ADDRESS: ':9001'
+    command: server --console-address ":9001" /data
+
+
+  tracking_server:
+    restart: always
+    build: ./mlflow
+    image: mlflow_server
+    container_name: mlflow_server
+    depends_on:
+      - db
+    ports:
+      - "5001:5000"
+    networks:
+      - frontend
+      - backend
+    environment:
+      - AWS_ACCESS_KEY_ID=yx9xkWV861UH5eRbP9bF
+      - AWS_SECRET_ACCESS_KEY=jpisuuN5OqJleeOMPD9cnbro6jJE1ffzWw0Y63jQ
+      - MLFLOW_S3_ENDPOINT_URL=http://s3:9000
+      - MLFLOW_S3_IGNORE_TLS=true
+    command: >
+      mlflow server
+      --backend-store-uri postgresql://mlflow:mlflow@db:5432/mlflow
+      --host 0.0.0.0
+      --serve-artifacts
+      --artifacts-destination s3://mlflow
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  db_data:
+  minio_data:
+
+networks:
+  frontend:
+    driver: bridge
+  backend:
+    driver: bridge
